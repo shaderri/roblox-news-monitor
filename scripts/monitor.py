@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 class RobloxNewsMonitor:
     def __init__(self):
         self.api_key = os.getenv('COMPOSIO_API_KEY')
-        self.target_email = os.getenv('TARGET_EMAIL', 'linkrobloxnews@gmail.com')
+        self.gmail_connection_id = "ac_3MWm_Rz19WVk"
         self.session_id = None
         self.base_url = "https://backend.composio.dev/api/v1"
         
