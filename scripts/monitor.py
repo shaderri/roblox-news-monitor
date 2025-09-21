@@ -331,7 +331,7 @@ class RobloxNewsMonitor:
             print(f"❌ Error creating email: {e}")
             return False
 
- def extract_draft_id(self, response):
+def extract_draft_id(self, response):
         """Извлечение ID черновика из ответа"""
         try:
             results = response.get('data', {}).get('data', {}).get('results', [])
