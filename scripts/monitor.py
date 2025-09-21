@@ -3,20 +3,14 @@ import requests
 import json
 import random
 import string
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 class RobloxNewsMonitor:
     def __init__(self):
         self.api_key = os.getenv('COMPOSIO_API_KEY')
         self.target_email = os.getenv('TARGET_EMAIL', 'linkrobloxnews@gmail.com')
-        self.gmail_connection_id = "ac_3MWm_Rz19WVk"  # Ваш Connection ID
         self.session_id = None
         self.base_url = "https://backend.composio.dev/api/v1"
-        
-        # Проверяем наличие API ключа
-        if not self.api_key:
-            print("❌ COMPOSIO_API_KEY not found in environment variables")
-            raise ValueError("Missing COMPOSIO_API_KEY")
         
     def generate_session_id(self):
         """Генерирует session_id в формате TTT-RRRRR"""
@@ -41,15 +35,14 @@ class RobloxNewsMonitor:
         
         try:
             response = requests.post(url, headers=headers, json=payload, timeout=30)
-            print(f"🔍 Tools search response: {response.status_code}")
-            
             if response.status_code == 200:
                 result = response.json()
                 self.session_id = result.get('data', {}).get('session', {}).get('id')
                 print(f"🔍 Tools initialized. Session: {self.session_id}")
                 return True
             else:
-                print(f"❌ Tools search failed: {response.status_code} - {response.text}")
+                print(f"❌ Tools search failed: {response.status_code}")
+                print(f"Response: {response.text}")
                 return False
         except Exception as e:
             print(f"❌ Error in tools search: {e}")
@@ -64,7 +57,7 @@ class RobloxNewsMonitor:
         }
         
         current_time = datetime.now(timezone.utc)
-        print(f"🕐 Current time: {current_time}")
+        cutoff_time = current_time - timedelta(hours=4)
         
         tools = [
             {
@@ -91,13 +84,12 @@ class RobloxNewsMonitor:
         
         try:
             response = requests.post(url, headers=headers, json=payload, timeout=60)
-            print(f"📰 News search response: {response.status_code}")
-            
             if response.status_code == 200:
-                print("📰 News search completed successfully")
+                print("📰 News search completed")
                 return response.json()
             else:
-                print(f"❌ News search failed: {response.status_code} - {response.text}")
+                print(f"❌ News search failed: {response.status_code}")
+                print(f"Response: {response.text}")
                 return None
         except Exception as e:
             print(f"❌ Error in news search: {e}")
@@ -108,63 +100,49 @@ class RobloxNewsMonitor:
         articles = []
         
         if not search_response or 'data' not in search_response:
-            print("⚠️ No data in search response")
             return articles
             
         try:
             results = search_response.get('data', {}).get('data', {}).get('results', [])
-            print(f"🔍 Processing {len(results)} search results")
             
-            for i, result in enumerate(results):
-                print(f"Processing result {i+1}")
+            for result in results:
                 response_data = result.get('response', {}).get('data', {})
                 
                 # Обработка Google News
                 if 'results' in response_data and 'news_results' in response_data['results']:
                     news_results = response_data['results']['news_results']
-                    print(f"  Found {len(news_results)} Google News articles")
-                    
                     for article in news_results:
                         date_str = article.get('date', '')
                         if self.is_recent_timestamp(date_str):
-                            article_data = {
+                            articles.append({
                                 'title': article.get('title', 'Без заголовка'),
                                 'url': article.get('link', '#'),
                                 'source': article.get('source', 'Неизвестный источник'),
                                 'date': date_str,
                                 'snippet': article.get('snippet', 'Описание недоступно'),
                                 'category': 'news'
-                            }
-                            articles.append(article_data)
-                            print(f"  ✓ Added: {article_data['title'][:50]}... - {date_str}")
+                            })
                 
                 # Обработка Tavily
                 elif 'response_data' in response_data and 'results' in response_data['response_data']:
                     tavily_results = response_data['response_data']['results']
-                    print(f"  Found {len(tavily_results)} Tavily results")
-                    
                     for article in tavily_results:
                         content = article.get('content', '')
                         title = article.get('title', '')
-                        
                         if 'roblox' in (content + title).lower():
                             # Проверяем на свежесть по содержанию
                             if any(term in content.lower() for term in ['hours ago', 'today', 'breaking', 'just', 'new']):
-                                article_data = {
+                                articles.append({
                                     'title': title or 'Без заголовка',
                                     'url': article.get('url', '#'),
                                     'source': self.extract_domain(article.get('url', '')),
                                     'date': 'Недавно',
                                     'snippet': content[:200] + '...' if len(content) > 200 else content,
                                     'category': 'web'
-                                }
-                                articles.append(article_data)
-                                print(f"  ✓ Added Tavily: {article_data['title'][:50]}...")
+                                })
                                 
         except Exception as e:
             print(f"⚠️ Error processing articles: {e}")
-            import traceback
-            traceback.print_exc()
         
         # Удаляем дубликаты по URL
         unique_articles = {}
@@ -173,9 +151,7 @@ class RobloxNewsMonitor:
             if url not in unique_articles and url != '#':
                 unique_articles[url] = article
         
-        final_articles = list(unique_articles.values())
-        print(f"📊 Final count: {len(final_articles)} unique articles")
-        return final_articles
+        return list(unique_articles.values())
     
     def is_recent_timestamp(self, date_str):
         """Проверка свежести временной метки"""
@@ -287,8 +263,6 @@ class RobloxNewsMonitor:
         else:
             subject = f"Roblox News Digest - {articles_count} новостей за последние 4 часа"
         
-        print(f"📧 Creating email with subject: {subject}")
-        
         # Создание черновика
         draft_tools = [{
             "tool_slug": "GMAIL_CREATE_EMAIL_DRAFT",
@@ -310,7 +284,6 @@ class RobloxNewsMonitor:
         
         try:
             response = requests.post(url, headers=headers, json=payload, timeout=30)
-            print(f"📝 Draft creation response: {response.status_code}")
             
             if response.status_code == 200:
                 result = response.json()
@@ -321,17 +294,17 @@ class RobloxNewsMonitor:
                     return self.send_draft(draft_id)
                 else:
                     print("❌ Failed to extract draft ID")
-                    print(f"Response: {json.dumps(result, indent=2)}")
                     return False
             else:
-                print(f"❌ Failed to create draft: {response.status_code} - {response.text}")
+                print(f"❌ Failed to create draft: {response.status_code}")
+                print(f"Response: {response.text}")
                 return False
                 
         except Exception as e:
             print(f"❌ Error creating email: {e}")
             return False
-
-def extract_draft_id(self, response):
+    
+    def extract_draft_id(self, response):
         """Извлечение ID черновика из ответа"""
         try:
             results = response.get('data', {}).get('data', {}).get('results', [])
@@ -366,13 +339,12 @@ def extract_draft_id(self, response):
         
         try:
             response = requests.post(url, headers=headers, json=payload, timeout=30)
-            print(f"📤 Send draft response: {response.status_code}")
-            
             if response.status_code == 200:
                 print("📧 Email sent successfully!")
                 return True
             else:
-                print(f"❌ Failed to send email: {response.status_code} - {response.text}")
+                print(f"❌ Failed to send email: {response.status_code}")
+                print(f"Response: {response.text}")
                 return False
         except Exception as e:
             print(f"❌ Error sending email: {e}")
@@ -382,29 +354,32 @@ def extract_draft_id(self, response):
         """Главный метод запуска мониторинга"""
         print(f"🚀 Roblox News Monitor started at {datetime.now(timezone.utc)}")
         print(f"📧 Target email: {self.target_email}")
-        print(f"🔑 API key present: {'Yes' if self.api_key else 'No'}")
-        print(f"📱 Gmail connection ID: {self.gmail_connection_id}")
         
         try:
+            # Проверяем API ключ
+            if not self.api_key:
+                print("❌ COMPOSIO_API_KEY not found in environment variables")
+                return False
+            
+            print(f"✅ API Key found (length: {len(self.api_key)})")
+            
             # Генерируем session_id
             self.session_id = self.generate_session_id()
             print(f"📋 Session ID: {self.session_id}")
             
             # Инициализация инструментов
-            print("🔍 Initializing tools...")
             if not self.search_tools():
                 print("❌ Failed to initialize tools")
                 return False
             
             # Поиск новостей
-            print("📰 Searching for fresh news...")
+            print("🔍 Searching for news...")
             search_result = self.search_fresh_news()
             if not search_result:
                 print("❌ Failed to search news")
                 return False
             
             # Фильтрация статей
-            print("🔍 Filtering articles with timestamps...")
             articles = self.filter_timestamped_articles(search_result)
             print(f"📰 Found {len(articles)} timestamped articles")
             
@@ -413,11 +388,8 @@ def extract_draft_id(self, response):
                 print("📋 Found articles:")
                 for i, article in enumerate(articles, 1):
                     print(f"  {i}. {article['title'][:60]}... - {article['date']}")
-            else:
-                print("📋 No timestamped articles found")
             
             # Создание HTML дайджеста
-            print("📄 Creating HTML digest...")
             html_digest = self.create_html_digest(articles)
             
             # Отправка email
@@ -426,11 +398,10 @@ def extract_draft_id(self, response):
             
             if success:
                 print("✅ Email digest sent successfully!")
-                print(f"📊 Summary: {len(articles)} articles processed and sent")
+                print(f"📊 Summary: {len(articles)} articles processed")
             else:
                 print("❌ Failed to send email digest")
             
-            print(f"🏁 Monitor completed at {datetime.now(timezone.utc)}")
             return success
             
         except Exception as e:
@@ -440,10 +411,6 @@ def extract_draft_id(self, response):
             return False
 
 if __name__ == "__main__":
-    try:
-        monitor = RobloxNewsMonitor()
-        success = monitor.run()
-        exit(0 if success else 1)
-    except Exception as e:
-        print(f"❌ Failed to initialize monitor: {e}")
-        exit(1)
+    monitor = RobloxNewsMonitor()
+    success = monitor.run()
+    exit(0 if success else 1)
